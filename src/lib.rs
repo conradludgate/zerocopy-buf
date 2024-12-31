@@ -60,9 +60,9 @@ pub trait ZeroCopyBuf: Buf {
     /// ```
     fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self::Buf, T>;
 
-    /// Get a ref to a slice of `T` from the [`Buf`].
+    /// Get a ref to a DST `T` from the [`Buf`].
     ///
-    /// If [`Buf::remaining`] is greater than or equal to the size of `T` * count,
+    /// If [`Buf::remaining`] is greater than or equal to the size of `T` with `count` elements,
     /// then a [`Ref<Self::Buf, T>`] is returned and the buffer is advanced by the size of `T`.
     ///
     /// If [`Buf::remaining`] is less, A [`SizeError`] is returned.
@@ -112,13 +112,11 @@ impl ZeroCopyBuf for Bytes {
     type Buf = ByteSlice<Bytes>;
 
     fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self::Buf, T> {
-        let buf = if self.remaining() < size_of::<T>() {
-            // don't consume data, instead "parse" a dummy empty slice.
-            ByteSlice(Bytes::new())
-        } else {
-            ByteSlice(self.split_to(size_of::<T>()))
-        };
-        Ref::from_bytes(buf).map_err(SizeError::from)
+        let (a, b) = Ref::from_prefix(ByteSlice(mem::take(self)))
+            .map_err(SizeError::from)
+            .map_err(|e| e.map_src(|s| ByteSlice(mem::replace(self, s.0))))?;
+        *self = b.0;
+        Ok(a)
     }
 
     fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
@@ -126,7 +124,8 @@ impl ZeroCopyBuf for Bytes {
         count: usize,
     ) -> Res<Self::Buf, T> {
         let (a, b) = Ref::from_prefix_with_elems(ByteSlice(mem::take(self)), count)
-            .map_err(SizeError::from)?;
+            .map_err(SizeError::from)
+            .map_err(|e| e.map_src(|s| ByteSlice(mem::replace(self, s.0))))?;
         *self = b.0;
         Ok(a)
     }
@@ -136,13 +135,11 @@ impl ZeroCopyBuf for BytesMut {
     type Buf = ByteSlice<BytesMut>;
 
     fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self::Buf, T> {
-        let buf = if self.remaining() < size_of::<T>() {
-            // don't consume data, instead "parse" a dummy empty slice.
-            ByteSlice(BytesMut::new())
-        } else {
-            ByteSlice(self.split_to(size_of::<T>()))
-        };
-        Ref::from_bytes(buf).map_err(SizeError::from)
+        let (a, b) = Ref::from_prefix(ByteSlice(mem::take(self)))
+            .map_err(SizeError::from)
+            .map_err(|e| e.map_src(|s| ByteSlice(mem::replace(self, s.0))))?;
+        *self = b.0;
+        Ok(a)
     }
 
     fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
@@ -150,7 +147,8 @@ impl ZeroCopyBuf for BytesMut {
         count: usize,
     ) -> Res<Self::Buf, T> {
         let (a, b) = Ref::from_prefix_with_elems(ByteSlice(mem::take(self)), count)
-            .map_err(SizeError::from)?;
+            .map_err(SizeError::from)
+            .map_err(|e| e.map_src(|s| ByteSlice(mem::replace(self, s.0))))?;
         *self = b.0;
         Ok(a)
     }
@@ -160,15 +158,9 @@ impl ZeroCopyBuf for &[u8] {
     type Buf = Self;
 
     fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self::Buf, T> {
-        let buf = if size_of::<T>() <= self.len() {
-            let (a, b) = self.split_at(size_of::<T>());
-            *self = b;
-            a
-        } else {
-            // don't consume data, instead "parse" a dummy empty slice.
-            &[]
-        };
-        Ref::from_bytes(buf).map_err(SizeError::from)
+        let (a, b) = Ref::from_prefix(*self).map_err(SizeError::from)?;
+        *self = b;
+        Ok(a)
     }
 
     fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(

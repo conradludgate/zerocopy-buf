@@ -101,3 +101,13 @@ fn try_get_clone() {
         }
     );
 }
+
+#[test]
+fn try_get_error() {
+    let header = b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00";
+    let mut data = Bytes::from_static(header);
+    let err = data.try_get::<Ipv4Header>().unwrap_err();
+
+    assert_eq!(data.len(), 19);
+    assert!(err.into_src().is_empty());
+}

@@ -6,8 +6,8 @@ rust-version = "1.56.0"
 
 [dependencies]
 bytes = { version = "1.0", default-features = false }
-zerocopy = { version = "0.8", default-features = false }
+zerocopy = { version = "0.8.9", default-features = false }
 
 [dev-dependencies]
 bytes = { version = "1.0", features = ["std"] }
-zerocopy = { version = "0.8", features = ["derive"] }
+zerocopy = { version = "0.8.9", features = ["derive"] }
