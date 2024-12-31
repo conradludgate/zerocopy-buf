@@ -1,8 +1,8 @@
-use bytes::{Buf, Bytes};
-use zerocopy::{network_endian, FromBytes};
-use zerocopy_buf::ZeroCopyReadBuf;
+use bytes::{Bytes, BytesMut};
+use zerocopy::{network_endian, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+use zerocopy_buf::ZeroCopyBuf;
 
-#[derive(FromBytes, PartialEq, Debug)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned, IntoBytes, PartialEq, Debug)]
 #[repr(C)]
 struct Ipv4Header {
     version_uhl: u8,
@@ -17,19 +17,22 @@ struct Ipv4Header {
     dst: Ipv4Addr,
 }
 
-#[derive(FromBytes, PartialEq, Debug)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned, IntoBytes, PartialEq, Debug)]
 #[repr(transparent)]
 struct Ipv4Addr([u8; 4]);
 
 #[test]
-fn read_bytes() {
+fn try_get() {
     let header =
         b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\xff\xfe\xfd\xfc";
     let mut data = Bytes::from_static(header);
-    let header = data.try_read::<Ipv4Header>().unwrap();
+    let header = data.try_get::<Ipv4Header>().unwrap();
+
+    assert_eq!(data, b"\xff\xfe\xfd\xfc"[..]);
+    drop(data);
 
     assert_eq!(
-        header,
+        *header,
         Ipv4Header {
             version_uhl: 0x45,
             dscp_ecn: 0x00,
@@ -43,20 +46,20 @@ fn read_bytes() {
             dst: Ipv4Addr([127, 0, 0, 2]),
         }
     );
-
-    assert_eq!(data, b"\xff\xfe\xfd\xfc"[..]);
 }
 
 #[test]
-fn read_chunked() {
+fn try_get_write() {
     let header =
         b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\xff\xfe\xfd\xfc";
-    let (lhs, rhs) = header.split_at(10);
-    let mut data = Bytes::from_static(lhs).chain(Bytes::from_static(rhs));
-    let header = data.try_read::<Ipv4Header>().unwrap();
+    let mut data = BytesMut::from(&header[..]);
+    let mut header = data.try_get::<Ipv4Header>().unwrap();
+
+    assert_eq!(data, b"\xff\xfe\xfd\xfc"[..]);
+    drop(data);
 
     assert_eq!(
-        header,
+        *header,
         Ipv4Header {
             version_uhl: 0x45,
             dscp_ecn: 0x00,
@@ -71,5 +74,30 @@ fn read_chunked() {
         }
     );
 
-    assert_eq!(data.chunk(), &b"\xff\xfe\xfd\xfc"[..]);
+    header.checksum.set(1);
+}
+
+#[test]
+fn try_get_clone() {
+    let header =
+        b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\xff\xfe\xfd\xfc";
+    let mut data = Bytes::from_static(header);
+    let header = data.try_get::<Ipv4Header>().unwrap();
+    let header2 = header.clone();
+
+    assert_eq!(
+        *header2,
+        Ipv4Header {
+            version_uhl: 0x45,
+            dscp_ecn: 0x00,
+            total_length: network_endian::U16::new(20),
+            identification: network_endian::U16::new(0),
+            flags_fragment: network_endian::U16::new(0),
+            ttl: 1,
+            protocol: 6,
+            checksum: network_endian::U16::new(0),
+            src: Ipv4Addr([127, 0, 0, 1]),
+            dst: Ipv4Addr([127, 0, 0, 2]),
+        }
+    );
 }
