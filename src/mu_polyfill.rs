@@ -1,3 +1,5 @@
+//! A polyfill of unstable MaybeUninit helpers.
+
 use core::{
     mem::{self, MaybeUninit},
     slice,

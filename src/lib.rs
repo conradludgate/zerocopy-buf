@@ -9,17 +9,37 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SizeError, Una
 
 extern crate alloc;
 
+mod buf_polyfill;
 mod mu_polyfill;
 
-pub trait ZeroCopyReadBuf {
-    fn try_read<T: FromBytes>(&mut self) -> Option<T>;
+/// A [`Buf`] that
+pub trait ZeroCopyReadBuf: Buf + Sized {
+    /// Read a `T` from the [`Buf`].
+    ///
+    /// If [`Buf::remaining`] is greater than or equal to the size of `T`,
+    /// then a T is returned and the buffer is advanced by the size of `T`.
+    ///
+    /// If [`Buf::remaining`] is less than the size of `T`, A [`SizeError`] is returned.
+    ///
+    /// This single method imitates all of the `Buf::get_...` methods.
+    /// For example, [`Buf::get_u16`] could be written as:
+    /// ```
+    /// use zerocopy_buf::ZeroCopyReadBuf;
+    ///
+    /// let mut data: &[u8] = &b"\x01\x02"[..];
+    /// let x = data.try_read::<zerocopy::network_endian::U16>().unwrap();
+    /// assert_eq!(x.get(), 0x0102);
+    /// ```
+    fn try_read<T: FromBytes>(&mut self) -> Result<T, SizeError<(), T>>;
 }
 
 impl<B: Buf> ZeroCopyReadBuf for B {
-    fn try_read<T: FromBytes>(&mut self) -> Option<T> {
+    fn try_read<T: FromBytes>(&mut self) -> Result<T, SizeError<(), T>> {
         let mut t = mem::MaybeUninit::<T>::uninit();
-        let bytes = copy_buf_to_uninit_slice(self, mu_polyfill::as_bytes_mut(&mut t))?;
-        T::read_from_bytes(bytes).ok()
+        let bytes = buf_polyfill::copy_to_uninit_slice(self, mu_polyfill::as_bytes_mut(&mut t))
+            .unwrap_or_default();
+
+        T::read_from_bytes(bytes).map_err(|e| e.map_src(|_| ()))
     }
 }
 
@@ -33,6 +53,7 @@ impl Deref for ByteSlice<Bytes> {
         &self.0
     }
 }
+
 impl Deref for ByteSlice<BytesMut> {
     type Target = [u8];
 
@@ -40,6 +61,7 @@ impl Deref for ByteSlice<BytesMut> {
         &self.0
     }
 }
+
 impl DerefMut for ByteSlice<BytesMut> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
@@ -82,19 +104,55 @@ unsafe impl zerocopy::SplitByteSlice for ByteSlice<BytesMut> {
     }
 }
 
-pub trait ZeroCopyBuf {
-    type Buf;
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(
+type Res<Z, T> = Result<Ref<<Z as ZeroCopyBuf>::Buf, T>, SizeError<<Z as ZeroCopyBuf>::Buf, T>>;
+
+pub trait ZeroCopyBuf: Buf {
+    type Buf: zerocopy::ByteSlice;
+
+    /// Get a ref to a `T` from the [`Buf`].
+    ///
+    /// If [`Buf::remaining`] is greater than or equal to the size of `T`,
+    /// then a [`Ref<Self::Buf, T>`] is returned and the buffer is advanced by the size of `T`.
+    ///
+    /// If [`Buf::remaining`] is less than the size of `T`, A [`SizeError`] is returned.
+    ///
+    /// This single method imitates all of the `Buf::get_...` methods.
+    /// For example, [`Buf::get_u16`] could be written as:
+    /// ```
+    /// use zerocopy_buf::ZeroCopyBuf;
+    ///
+    /// let mut data: &[u8] = &b"\x01\x02"[..];
+    /// let x = data.try_get::<zerocopy::network_endian::U16>().unwrap();
+    /// assert_eq!(x.get(), 0x0102);
+    /// ```
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self, T>;
+
+    /// Get a ref to a slice of `T` from the [`Buf`].
+    ///
+    /// If [`Buf::remaining`] is greater than or equal to the size of `T` * count,
+    /// then a [`Ref<Self::Buf, T>`] is returned and the buffer is advanced by the size of `T`.
+    ///
+    /// If [`Buf::remaining`] is less, A [`SizeError`] is returned.
+    ///
+    /// ```
+    /// use zerocopy_buf::ZeroCopyBuf;
+    ///
+    /// let mut data: &[u8] = &b"\x01\x02\x03\x04"[..];
+    /// let x = data.try_get_elems::<zerocopy::network_endian::U16>(2).unwrap();
+    /// assert_eq!(x.len(), 2);
+    /// assert_eq!(x[0].get(), 0x0102);
+    /// assert_eq!(x[1].get(), 0x0304);
+    /// ```
+    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
         &mut self,
-    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>>;
+        count: usize,
+    ) -> Res<Self, [T]>;
 }
 
 impl ZeroCopyBuf for Bytes {
     type Buf = ByteSlice<Bytes>;
 
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(
-        &mut self,
-    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>> {
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self, T> {
         let buf = if self.remaining() < size_of::<T>() {
             // don't consume data, instead "parse" a dummy empty slice.
             ByteSlice(Bytes::new())
@@ -103,14 +161,23 @@ impl ZeroCopyBuf for Bytes {
         };
         Ref::from_bytes(buf).map_err(SizeError::from)
     }
+
+    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+        count: usize,
+    ) -> Res<Self, [T]> {
+        let buf = match size_of::<T>().checked_mul(count) {
+            Some(len) if self.remaining() >= len => ByteSlice(self.split_to(len)),
+            _ => ByteSlice(Bytes::new()),
+        };
+        Ref::from_bytes_with_elems(buf, count).map_err(SizeError::from)
+    }
 }
 
 impl ZeroCopyBuf for BytesMut {
     type Buf = ByteSlice<BytesMut>;
 
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(
-        &mut self,
-    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>> {
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self, T> {
         let buf = if self.remaining() < size_of::<T>() {
             // don't consume data, instead "parse" a dummy empty slice.
             ByteSlice(BytesMut::new())
@@ -119,14 +186,23 @@ impl ZeroCopyBuf for BytesMut {
         };
         Ref::from_bytes(buf).map_err(SizeError::from)
     }
+
+    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+        count: usize,
+    ) -> Res<Self, [T]> {
+        let buf = match size_of::<T>().checked_mul(count) {
+            Some(len) if self.remaining() >= len => ByteSlice(self.split_to(len)),
+            _ => ByteSlice(BytesMut::new()),
+        };
+        Ref::from_bytes_with_elems(buf, count).map_err(SizeError::from)
+    }
 }
 
 impl ZeroCopyBuf for &[u8] {
     type Buf = Self;
 
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(
-        &mut self,
-    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>> {
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<Self, T> {
         let buf = if size_of::<T>() <= self.len() {
             let (a, b) = self.split_at(size_of::<T>());
             *self = b;
@@ -137,9 +213,36 @@ impl ZeroCopyBuf for &[u8] {
         };
         Ref::from_bytes(buf).map_err(SizeError::from)
     }
+
+    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+        count: usize,
+    ) -> Res<Self, [T]> {
+        let buf = match size_of::<T>().checked_mul(count) {
+            Some(len) if self.remaining() >= len => {
+                let (a, b) = self.split_at(len);
+                *self = b;
+                a
+            }
+            _ => &[],
+        };
+        Ref::from_bytes_with_elems(buf, count).map_err(SizeError::from)
+    }
 }
 
-pub trait ZeroCopyBufMut {
+/// A [`BufMut`] that uses [`zerocopy::IntoBytes`] to encode
+pub trait ZeroCopyBufMut: BufMut {
+    /// Write a `T` to the [`BufMut`].
+    ///
+    /// This single method imitates all of the `BufMut::put_...` methods.
+    /// For example, [`BufMut::put_u16`] could be written as:
+    /// ```
+    /// use zerocopy_buf::ZeroCopyBufMut;
+    ///
+    /// let mut data = bytes::BytesMut::new();
+    /// data.write(zerocopy::network_endian::U16::new(0x0102));
+    /// assert_eq!(&data, &b"\x01\x02"[..]);
+    /// ```
     fn write<T: IntoBytes + Immutable>(&mut self, t: T);
 }
 
@@ -147,28 +250,4 @@ impl<B: BufMut> ZeroCopyBufMut for B {
     fn write<T: IntoBytes + Immutable>(&mut self, t: T) {
         self.put_slice(t.as_bytes());
     }
-}
-
-/// Like [`Buf::copy_to_slice`] but supports uninit slices too.
-fn copy_buf_to_uninit_slice<'a>(
-    this: &mut impl Buf,
-    dst: &'a mut [mem::MaybeUninit<u8>],
-) -> Option<&'a mut [u8]> {
-    if this.remaining() < dst.len() {
-        return None;
-    }
-
-    let mut c = &mut *dst;
-    while !c.is_empty() {
-        let src = this.chunk();
-
-        let cnt = usize::min(src.len(), c.len());
-        mu_polyfill::copy_from_slice(&mut c[..cnt], &src[..cnt]);
-
-        c = &mut c[cnt..];
-        this.advance(cnt);
-    }
-
-    // SAFETY: we have initilaised all of the bytes
-    Some(unsafe { mu_polyfill::slice_assume_init_mut(dst) })
 }
