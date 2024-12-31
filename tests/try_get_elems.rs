@@ -26,7 +26,7 @@ fn try_get() {
     let header =
         b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\xff\xfe\xfd\xfc";
     let mut data = Bytes::from_static(header);
-    let header = data.try_get_elems::<Ipv4Header>(2).unwrap();
+    let header = data.try_get_elems::<[Ipv4Header]>(2).unwrap();
 
     assert_eq!(data, b"\xff\xfe\xfd\xfc"[..]);
     drop(data);
@@ -67,7 +67,7 @@ fn try_get_write() {
     let header =
         b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x02\xff\xfe\xfd\xfc";
     let mut data = BytesMut::from(&header[..]);
-    let mut header = data.try_get_elems::<Ipv4Header>(2).unwrap();
+    let mut header = data.try_get_elems::<[Ipv4Header]>(2).unwrap();
 
     assert_eq!(data, b"\xff\xfe\xfd\xfc"[..]);
     drop(data);

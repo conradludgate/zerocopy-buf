@@ -71,15 +71,15 @@ pub trait ZeroCopyBuf: Buf {
     /// use zerocopy_buf::ZeroCopyBuf;
     ///
     /// let mut data: &[u8] = &b"\x01\x02\x03\x04"[..];
-    /// let x = data.try_get_elems::<zerocopy::network_endian::U16>(2).unwrap();
+    /// let x = data.try_get_elems::<[zerocopy::network_endian::U16]>(2).unwrap();
     /// assert_eq!(x.len(), 2);
     /// assert_eq!(x[0].get(), 0x0102);
     /// assert_eq!(x[1].get(), 0x0304);
     /// ```
-    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+    fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
         &mut self,
         count: usize,
-    ) -> Res<Self::Buf, [T]>;
+    ) -> Res<Self::Buf, T>;
 }
 
 /// A [`BufMut`] that uses [`zerocopy::IntoBytes`] to encode
@@ -121,15 +121,14 @@ impl ZeroCopyBuf for Bytes {
         Ref::from_bytes(buf).map_err(SizeError::from)
     }
 
-    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+    fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
         &mut self,
         count: usize,
-    ) -> Res<Self::Buf, [T]> {
-        let buf = match size_of::<T>().checked_mul(count) {
-            Some(len) if self.remaining() >= len => ByteSlice(self.split_to(len)),
-            _ => ByteSlice(Bytes::new()),
-        };
-        Ref::from_bytes_with_elems(buf, count).map_err(SizeError::from)
+    ) -> Res<Self::Buf, T> {
+        let (a, b) = Ref::from_prefix_with_elems(ByteSlice(mem::take(self)), count)
+            .map_err(SizeError::from)?;
+        *self = b.0;
+        Ok(a)
     }
 }
 
@@ -146,15 +145,14 @@ impl ZeroCopyBuf for BytesMut {
         Ref::from_bytes(buf).map_err(SizeError::from)
     }
 
-    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+    fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
         &mut self,
         count: usize,
-    ) -> Res<Self::Buf, [T]> {
-        let buf = match size_of::<T>().checked_mul(count) {
-            Some(len) if self.remaining() >= len => ByteSlice(self.split_to(len)),
-            _ => ByteSlice(BytesMut::new()),
-        };
-        Ref::from_bytes_with_elems(buf, count).map_err(SizeError::from)
+    ) -> Res<Self::Buf, T> {
+        let (a, b) = Ref::from_prefix_with_elems(ByteSlice(mem::take(self)), count)
+            .map_err(SizeError::from)?;
+        *self = b.0;
+        Ok(a)
     }
 }
 
@@ -173,19 +171,13 @@ impl ZeroCopyBuf for &[u8] {
         Ref::from_bytes(buf).map_err(SizeError::from)
     }
 
-    fn try_get_elems<T: KnownLayout + Immutable + Unaligned>(
+    fn try_get_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
         &mut self,
         count: usize,
-    ) -> Res<Self::Buf, [T]> {
-        let buf = match size_of::<T>().checked_mul(count) {
-            Some(len) if self.remaining() >= len => {
-                let (a, b) = self.split_at(len);
-                *self = b;
-                a
-            }
-            _ => &[],
-        };
-        Ref::from_bytes_with_elems(buf, count).map_err(SizeError::from)
+    ) -> Res<Self::Buf, T> {
+        let (a, b) = Ref::from_prefix_with_elems(*self, count).map_err(SizeError::from)?;
+        *self = b;
+        Ok(a)
     }
 }
 
