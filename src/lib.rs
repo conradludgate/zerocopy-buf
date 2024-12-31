@@ -80,6 +80,51 @@ pub trait ZeroCopyBuf: Buf {
         &mut self,
         count: usize,
     ) -> Res<Self::Buf, T>;
+
+    /// Get a ref to a `T` from the [`Buf`].
+    ///
+    /// If [`Buf::remaining`] is greater than or equal to the size of `T`,
+    /// then a [`Ref<Self::Buf, T>`] is returned and the buffer is **NOT** advanced by the size of `T`.
+    ///
+    /// If [`Buf::remaining`] is less than the size of `T`, A [`SizeError`] is returned.
+    ///
+    /// ```
+    /// use zerocopy_buf::ZeroCopyBuf;
+    /// use zerocopy::{FromBytes, KnownLayout, Immutable, Unaligned};
+    ///
+    /// #[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+    /// #[repr(C)]
+    /// struct PacketHeader {
+    ///     len: zerocopy::network_endian::U32,
+    /// }
+    ///
+    /// #[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+    /// #[repr(C)]
+    /// struct Packet {
+    ///     header: PacketHeader,
+    ///     body: [u8],
+    /// }
+    ///
+    /// let mut data: &[u8] = &b"\x00\x00\x00\x0bhello world"[..];
+    /// let header = data.try_peek::<PacketHeader>().unwrap();
+    /// let payload_len = header.len.get();
+    /// assert_eq!(payload_len, 11);
+    ///
+    /// let packet = data.try_get_elems::<Packet>(payload_len as usize).unwrap();
+    /// assert_eq!(packet.body, b"hello world"[..]);
+    /// ```
+    fn try_peek<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<&[u8], T>;
+
+    /// Get a ref to a DST `T` from the [`Buf`].
+    ///
+    /// If [`Buf::remaining`] is greater than or equal to the size of `T` with `count` elements,
+    /// then a [`Ref<Self::Buf, T>`] is returned and the buffer is **NOT** advanced by the size of `T`.
+    ///
+    /// If [`Buf::remaining`] is less, A [`SizeError`] is returned.
+    fn try_peek_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
+        &mut self,
+        count: usize,
+    ) -> Res<&[u8], T>;
 }
 
 /// A [`BufMut`] that uses [`zerocopy::IntoBytes`] to encode
@@ -129,6 +174,19 @@ impl ZeroCopyBuf for Bytes {
         *self = b.0;
         Ok(a)
     }
+
+    fn try_peek<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<&[u8], T> {
+        let (a, _) = Ref::from_prefix(&**self).map_err(SizeError::from)?;
+        Ok(a)
+    }
+
+    fn try_peek_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
+        &mut self,
+        count: usize,
+    ) -> Res<&[u8], T> {
+        let (a, _) = Ref::from_prefix_with_elems(&**self, count).map_err(SizeError::from)?;
+        Ok(a)
+    }
 }
 
 impl ZeroCopyBuf for BytesMut {
@@ -152,6 +210,19 @@ impl ZeroCopyBuf for BytesMut {
         *self = b.0;
         Ok(a)
     }
+
+    fn try_peek<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<&[u8], T> {
+        let (a, _) = Ref::from_prefix(&**self).map_err(SizeError::from)?;
+        Ok(a)
+    }
+
+    fn try_peek_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
+        &mut self,
+        count: usize,
+    ) -> Res<&[u8], T> {
+        let (a, _) = Ref::from_prefix_with_elems(&**self, count).map_err(SizeError::from)?;
+        Ok(a)
+    }
 }
 
 impl ZeroCopyBuf for &[u8] {
@@ -169,6 +240,19 @@ impl ZeroCopyBuf for &[u8] {
     ) -> Res<Self::Buf, T> {
         let (a, b) = Ref::from_prefix_with_elems(*self, count).map_err(SizeError::from)?;
         *self = b;
+        Ok(a)
+    }
+
+    fn try_peek<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Res<&[u8], T> {
+        let (a, _) = Ref::from_prefix(*self).map_err(SizeError::from)?;
+        Ok(a)
+    }
+
+    fn try_peek_elems<T: KnownLayout<PointerMetadata = usize> + Immutable + Unaligned + ?Sized>(
+        &mut self,
+        count: usize,
+    ) -> Res<&[u8], T> {
+        let (a, _) = Ref::from_prefix_with_elems(*self, count).map_err(SizeError::from)?;
         Ok(a)
     }
 }
