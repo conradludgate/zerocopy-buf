@@ -5,7 +5,7 @@ use core::{
     mem,
     ops::{Deref, DerefMut},
 };
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SizeError, Unaligned};
 
 extern crate alloc;
 
@@ -84,49 +84,58 @@ unsafe impl zerocopy::SplitByteSlice for ByteSlice<BytesMut> {
 
 pub trait ZeroCopyBuf {
     type Buf;
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Option<Ref<Self::Buf, T>>;
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>>;
 }
 
 impl ZeroCopyBuf for Bytes {
     type Buf = ByteSlice<Bytes>;
 
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Option<Ref<Self::Buf, T>> {
-        if self.remaining() < size_of::<T>() {
-            return None;
-        }
-        let buf = ByteSlice(self.split_to(size_of::<T>()));
-        Some(
-            Ref::from_bytes(buf)
-                .expect("size has been checked, and T is unaligned, so this should never panic"),
-        )
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>> {
+        let buf = if self.remaining() < size_of::<T>() {
+            // don't consume data, instead "parse" a dummy empty slice.
+            ByteSlice(Bytes::new())
+        } else {
+            ByteSlice(self.split_to(size_of::<T>()))
+        };
+        Ref::from_bytes(buf).map_err(SizeError::from)
     }
 }
 
 impl ZeroCopyBuf for BytesMut {
     type Buf = ByteSlice<BytesMut>;
 
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Option<Ref<Self::Buf, T>> {
-        if self.remaining() < size_of::<T>() {
-            return None;
-        }
-        let buf = ByteSlice(self.split_to(size_of::<T>()));
-        Some(
-            Ref::from_bytes(buf)
-                .expect("size has been checked, and T is unaligned, so this should never panic"),
-        )
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>> {
+        let buf = if self.remaining() < size_of::<T>() {
+            // don't consume data, instead "parse" a dummy empty slice.
+            ByteSlice(BytesMut::new())
+        } else {
+            ByteSlice(self.split_to(size_of::<T>()))
+        };
+        Ref::from_bytes(buf).map_err(SizeError::from)
     }
 }
 
 impl ZeroCopyBuf for &[u8] {
     type Buf = Self;
 
-    fn try_get<T: KnownLayout + Immutable + Unaligned>(&mut self) -> Option<Ref<Self::Buf, T>> {
-        let (a, b) = self.split_at_checked(size_of::<T>())?;
-        *self = b;
-        Some(
-            Ref::from_bytes(a)
-                .expect("size has been checked, and T is unaligned, so this should never panic"),
-        )
+    fn try_get<T: KnownLayout + Immutable + Unaligned>(
+        &mut self,
+    ) -> Result<Ref<Self::Buf, T>, SizeError<Self::Buf, T>> {
+        let buf = if size_of::<T>() <= self.len() {
+            let (a, b) = self.split_at(size_of::<T>());
+            *self = b;
+            a
+        } else {
+            // don't consume data, instead "parse" a dummy empty slice.
+            &[]
+        };
+        Ref::from_bytes(buf).map_err(SizeError::from)
     }
 }
 
