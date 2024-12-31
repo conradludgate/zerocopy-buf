@@ -1,8 +1,8 @@
 use bytes::{Buf, Bytes};
-use zerocopy::{network_endian, FromBytes, FromZeroes};
+use zerocopy::{network_endian, FromBytes};
 use zerocopy_buf::ZeroCopyReadBuf;
 
-#[derive(FromBytes, FromZeroes, PartialEq, Debug)]
+#[derive(FromBytes, PartialEq, Debug)]
 #[repr(C)]
 struct Ipv4Header {
     version_uhl: u8,
@@ -17,7 +17,7 @@ struct Ipv4Header {
     dst: Ipv4Addr,
 }
 
-#[derive(FromBytes, FromZeroes, PartialEq, Debug)]
+#[derive(FromBytes, PartialEq, Debug)]
 #[repr(transparent)]
 struct Ipv4Addr([u8; 4]);
 

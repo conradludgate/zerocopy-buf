@@ -2,7 +2,7 @@
 
 use bytes::{Buf, BufMut};
 use core::mem;
-use zerocopy::{AsBytes, FromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 mod mu_polyfill;
 
@@ -14,16 +14,16 @@ impl<B: Buf> ZeroCopyReadBuf for B {
     fn try_read<T: FromBytes>(&mut self) -> Option<T> {
         let mut t = mem::MaybeUninit::<T>::uninit();
         let bytes = copy_buf_to_uninit_slice(self, mu_polyfill::as_bytes_mut(&mut t))?;
-        T::read_from(bytes)
+        T::read_from_bytes(bytes).ok()
     }
 }
 
 pub trait ZeroCopyBufMut {
-    fn write<T: AsBytes>(&mut self, t: T);
+    fn write<T: IntoBytes + Immutable>(&mut self, t: T);
 }
 
 impl<B: BufMut> ZeroCopyBufMut for B {
-    fn write<T: AsBytes>(&mut self, t: T) {
+    fn write<T: IntoBytes + Immutable>(&mut self, t: T) {
         self.put_slice(t.as_bytes());
     }
 }
