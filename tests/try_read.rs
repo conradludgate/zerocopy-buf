@@ -73,3 +73,12 @@ fn read_chunked() {
 
     assert_eq!(data.chunk(), &b"\xff\xfe\xfd\xfc"[..]);
 }
+
+#[test]
+fn try_read_error() {
+    let header = b"\x45\x00\x00\x14\x00\x00\x00\x00\x01\x06\x00\x00\x7f\x00\x00\x01\x7f\x00\x00";
+    let mut data = Bytes::from_static(header);
+    let _err = data.try_read::<Ipv4Header>().unwrap_err();
+
+    assert_eq!(data.len(), 19);
+}

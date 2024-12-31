@@ -1,5 +1,4 @@
 //! Extensions for [`bytes::Buf`] with compatibility with [`zerocopy`].
-
 #![no_std]
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -140,7 +139,7 @@ pub trait ZeroCopyBufMut: BufMut {
     /// data.write(zerocopy::network_endian::U16::new(0x0102));
     /// assert_eq!(&data, &b"\x01\x02"[..]);
     /// ```
-    fn write<T: IntoBytes + Immutable>(&mut self, t: T);
+    fn write<T: IntoBytes + Immutable>(&mut self, t: &T);
 }
 
 impl<B: Buf> ZeroCopyReadBuf for B {
@@ -258,7 +257,7 @@ impl ZeroCopyBuf for &[u8] {
 }
 
 impl<B: BufMut> ZeroCopyBufMut for B {
-    fn write<T: IntoBytes + Immutable>(&mut self, t: T) {
+    fn write<T: IntoBytes + Immutable>(&mut self, t: &T) {
         self.put_slice(t.as_bytes());
     }
 }
