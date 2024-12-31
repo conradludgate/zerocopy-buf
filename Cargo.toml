@@ -1,0 +1,12 @@
+[package]
+name = "zerocopy-buf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = { version = "1.0.0", default-features = false }
+zerocopy = { version = "0.7", default-features = false }
+
+[dev-dependencies]
+bytes = { version = "1.0.0", features = ["std"] }
+zerocopy = { version = "0.7", features = ["derive", "byteorder"] }
