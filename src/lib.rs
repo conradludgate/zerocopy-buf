@@ -357,36 +357,81 @@ impl DerefMut for ByteSlice<BytesMut> {
 }
 
 /// # Safety
-/// We can reasonably assume that [`Bytes`] deref is stable.
-/// Specifically, two consecutive calls to deref will not
-/// produce different results.
+/// The `ByteSlice` contract requires two dereferences of an unchanged value to
+/// return slices with the "same address and length" [1]. `Bytes` documents
+/// itself as a "chunk of contiguous memory" and says clones share its
+/// underlying memory [2]. Its view is immutable and changes only through
+/// explicit split/consuming operations, so the wrapper's dereference is stable.
+///
+/// [1] https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
+/// [2] https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
 unsafe impl zerocopy::ByteSlice for ByteSlice<Bytes> {}
 
 /// # Safety
-/// Cloning a [`Bytes`] is currently always stable. The clone operation
-/// Might allocate a new Shared metadata,
-/// but it never de-allocates the original bytes buffer.
+/// The `CloneableByteSlice` contract requires dereference stability to hold
+/// across cloning [1]. `Bytes` documents that clones share the same underlying
+/// memory [2], while retaining their view metadata, so cloning preserves the
+/// byte view.
+///
+/// [1] https://docs.rs/zerocopy/0.8.9/zerocopy/trait.CloneableByteSlice.html#safety
+/// [2] https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
 unsafe impl zerocopy::CloneableByteSlice for ByteSlice<Bytes> {}
 
 /// # Safety
-/// We can reasonably assume that [`BytesMut`] deref is stable.
-/// Specifically, two consecutive calls to deref will not
-/// produce different results.
+/// The `ByteSlice` contract requires two dereferences of an unchanged value to
+/// return slices with the "same address and length" [1]. This wrapper owns its
+/// `BytesMut`; its dereference methods return slices of the current view, and
+/// safe mutable slice access cannot change the slice length or reallocate it.
+/// The view changes only through the explicit split implementation below.
+///
+/// [1] https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
 unsafe impl zerocopy::ByteSlice for ByteSlice<BytesMut> {}
 
 /// # Safety
-/// [`Bytes::split_to`] performs the required simple pointer arithmetic
+/// SAFETY:
+/// - The caller must uphold `SplitByteSlice::split_at_unchecked`'s requirement
+///   that `mid <= self.len()`.
+/// - `Bytes::split_to` returns bytes `[0, mid)` and leaves bytes `[mid, len)`
+///   in `self`, so the returned wrappers exactly partition the original view.
+///
+/// The `Bytes` API documents that it "contains elements `[at, len)`" in self
+/// and returns `[0, at)` [1].
+///
+/// [1] https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html#method.split_to
 unsafe impl zerocopy::SplitByteSlice for ByteSlice<Bytes> {
+    /// # Safety
+    /// `mid` must satisfy the trait contract: "mid must not be greater than
+    /// self.deref().len()".
+    /// https://docs.rs/zerocopy/0.8.9/zerocopy/trait.SplitByteSlice.html#method.split_at_unchecked
     unsafe fn split_at_unchecked(mut self, mid: usize) -> (Self, Self) {
+        // SAFETY: the trait's caller contract guarantees `mid <= self.len()`;
+        // Bytes::split_to then produces exactly the prefix and suffix ranges
+        // described below.
         let lhs = self.0.split_to(mid);
         (Self(lhs), self)
     }
 }
 
 /// # Safety
-/// [`BytesMut::split_to`] performs the required simple pointer arithmetic
+/// SAFETY:
+/// - The caller must uphold `SplitByteSlice::split_at_unchecked`'s requirement
+///   that `mid <= self.len()`.
+/// - `BytesMut::split_to` returns bytes `[0, mid)` and leaves bytes `[mid, len)`
+///   in `self`, so the returned wrappers exactly partition the original view.
+///
+/// The `BytesMut` API documents that it "contains elements `[at, len)`" in
+/// self and returns `[0, at)` [1].
+///
+/// [1] https://docs.rs/bytes/1.0.0/bytes/struct.BytesMut.html#method.split_to
 unsafe impl zerocopy::SplitByteSlice for ByteSlice<BytesMut> {
+    /// # Safety
+    /// `mid` must satisfy the trait contract: "mid must not be greater than
+    /// self.deref().len()".
+    /// https://docs.rs/zerocopy/0.8.9/zerocopy/trait.SplitByteSlice.html#method.split_at_unchecked
     unsafe fn split_at_unchecked(mut self, mid: usize) -> (Self, Self) {
+        // SAFETY: the trait's caller contract guarantees `mid <= self.len()`;
+        // BytesMut::split_to then produces exactly the prefix and suffix ranges
+        // described below.
         let lhs = self.0.split_to(mid);
         (Self(lhs), self)
     }

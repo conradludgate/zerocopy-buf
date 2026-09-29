@@ -26,6 +26,11 @@ pub fn copy_to_uninit_slice<'a>(
         this.advance(cnt);
     }
 
-    // SAFETY: we have initilaised all of the bytes
+    // SAFETY: the loop exits only after copying into every destination byte;
+    // each destination byte is therefore initialized and valid as u8 [1].
+    //
+    // [1] The standard-library docs say calling `assume_init_mut` before full
+    // initialization "causes undefined behavior":
+    // https://doc.rust-lang.org/1.91.0/std/mem/union.MaybeUninit.html#method.assume_init_mut
     Some(unsafe { mu_polyfill::slice_assume_init_mut(dst) })
 }
