@@ -68,3 +68,11 @@ fn write_chunked() {
     assert_eq!(lhs, header[..10]);
     assert_eq!(rhs, header[10..]);
 }
+
+#[test]
+fn write_slice() {
+    let mut data = BytesMut::new();
+    data.write(&b"payload"[..]);
+
+    assert_eq!(data, b"payload"[..]);
+}
