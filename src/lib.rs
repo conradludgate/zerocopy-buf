@@ -20,10 +20,17 @@ impl<B: Buf> ZeroCopyReadBuf for B {
 
 pub trait ZeroCopyBufMut {
     fn write<T: AsBytes>(&mut self, t: T);
+
+    /// Write an unsized `AsBytes` value, such as a byte slice, into the buffer.
+    fn write_ref<T: AsBytes + ?Sized>(&mut self, t: &T);
 }
 
 impl<B: BufMut> ZeroCopyBufMut for B {
     fn write<T: AsBytes>(&mut self, t: T) {
+        self.put_slice(t.as_bytes());
+    }
+
+    fn write_ref<T: AsBytes + ?Sized>(&mut self, t: &T) {
         self.put_slice(t.as_bytes());
     }
 }
