@@ -1,4 +1,4 @@
-use zerocopy::{network_endian::U16, KnownLayout, Immutable, Unaligned};
+use zerocopy::{network_endian::U16, Immutable, KnownLayout, Unaligned};
 use zerocopy_buf::ZeroCopyBuf;
 
 #[test]

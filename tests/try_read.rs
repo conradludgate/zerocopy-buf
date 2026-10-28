@@ -86,8 +86,6 @@ fn try_read_error() {
 #[test]
 fn read_zero_sized_type() {
     let mut data = Bytes::from_static(b"unchanged");
-    let value = data.try_read::<()>().unwrap();
-
-    assert_eq!(value, ());
+    assert_eq!(data.try_read::<()>(), Ok(()));
     assert_eq!(data, b"unchanged"[..]);
 }
