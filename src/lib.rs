@@ -363,8 +363,8 @@ impl DerefMut for ByteSlice<BytesMut> {
 /// underlying memory [2]. Its view is immutable and changes only through
 /// explicit split/consuming operations, so the wrapper's dereference is stable.
 ///
-/// [1] https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
-/// [2] https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
+/// [1]: https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
+/// [2]: https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
 unsafe impl zerocopy::ByteSlice for ByteSlice<Bytes> {}
 
 /// # Safety
@@ -373,8 +373,8 @@ unsafe impl zerocopy::ByteSlice for ByteSlice<Bytes> {}
 /// memory [2], while retaining their view metadata, so cloning preserves the
 /// byte view.
 ///
-/// [1] https://docs.rs/zerocopy/0.8.9/zerocopy/trait.CloneableByteSlice.html#safety
-/// [2] https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
+/// [1]: https://docs.rs/zerocopy/0.8.9/zerocopy/trait.CloneableByteSlice.html#safety
+/// [2]: https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
 unsafe impl zerocopy::CloneableByteSlice for ByteSlice<Bytes> {}
 
 /// # Safety
@@ -384,7 +384,7 @@ unsafe impl zerocopy::CloneableByteSlice for ByteSlice<Bytes> {}
 /// safe mutable slice access cannot change the slice length or reallocate it.
 /// The view changes only through the explicit split implementation below.
 ///
-/// [1] https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
+/// [1]: https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
 unsafe impl zerocopy::ByteSlice for ByteSlice<BytesMut> {}
 
 /// # Safety
@@ -397,12 +397,12 @@ unsafe impl zerocopy::ByteSlice for ByteSlice<BytesMut> {}
 /// The `Bytes` API documents that it "contains elements `[at, len)`" in self
 /// and returns `[0, at)` [1].
 ///
-/// [1] https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html#method.split_to
+/// [1]: https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html#method.split_to
 unsafe impl zerocopy::SplitByteSlice for ByteSlice<Bytes> {
     /// # Safety
     /// `mid` must satisfy the trait contract: "mid must not be greater than
     /// self.deref().len()".
-    /// https://docs.rs/zerocopy/0.8.9/zerocopy/trait.SplitByteSlice.html#method.split_at_unchecked
+    /// <https://docs.rs/zerocopy/0.8.9/zerocopy/trait.SplitByteSlice.html#method.split_at_unchecked>
     unsafe fn split_at_unchecked(mut self, mid: usize) -> (Self, Self) {
         // SAFETY: the trait's caller contract guarantees `mid <= self.len()`;
         // Bytes::split_to then produces exactly the prefix and suffix ranges
@@ -422,12 +422,12 @@ unsafe impl zerocopy::SplitByteSlice for ByteSlice<Bytes> {
 /// The `BytesMut` API documents that it "contains elements `[at, len)`" in
 /// self and returns `[0, at)` [1].
 ///
-/// [1] https://docs.rs/bytes/1.0.0/bytes/struct.BytesMut.html#method.split_to
+/// [1]: https://docs.rs/bytes/1.0.0/bytes/struct.BytesMut.html#method.split_to
 unsafe impl zerocopy::SplitByteSlice for ByteSlice<BytesMut> {
     /// # Safety
     /// `mid` must satisfy the trait contract: "mid must not be greater than
     /// self.deref().len()".
-    /// https://docs.rs/zerocopy/0.8.9/zerocopy/trait.SplitByteSlice.html#method.split_at_unchecked
+    /// <https://docs.rs/zerocopy/0.8.9/zerocopy/trait.SplitByteSlice.html#method.split_at_unchecked>
     unsafe fn split_at_unchecked(mut self, mid: usize) -> (Self, Self) {
         // SAFETY: the trait's caller contract guarantees `mid <= self.len()`;
         // BytesMut::split_to then produces exactly the prefix and suffix ranges
