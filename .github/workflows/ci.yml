@@ -20,7 +20,7 @@ jobs:
       - name: Resolve minimum direct dependencies
         if: matrix.dependencies == 'minimum'
         run: |
-          cargo update -p bytes --precise 1.2.1
+          cargo update -p bytes --precise 1.8.0
           cargo update -p zerocopy --precise 0.8.9
       - run: cargo fmt --all -- --check
       - run: cargo test --locked
@@ -47,7 +47,7 @@ jobs:
       - name: Resolve minimum direct dependencies
         if: matrix.dependencies == 'minimum'
         run: |
-          cargo update -p bytes --precise 1.2.1
+          cargo update -p bytes --precise 1.8.0
           cargo update -p zerocopy --precise 0.8.9
       - run: cargo miri test --locked --tests
       - run: cargo miri test --locked --tests

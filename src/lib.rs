@@ -364,7 +364,7 @@ impl DerefMut for ByteSlice<BytesMut> {
 /// explicit split/consuming operations, so the wrapper's dereference is stable.
 ///
 /// [1]: https://docs.rs/zerocopy/0.8.9/zerocopy/trait.ByteSlice.html#safety
-/// [2]: https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
+/// [2]: https://docs.rs/bytes/1.8.0/bytes/struct.Bytes.html
 unsafe impl zerocopy::ByteSlice for ByteSlice<Bytes> {}
 
 /// # Safety
@@ -374,7 +374,7 @@ unsafe impl zerocopy::ByteSlice for ByteSlice<Bytes> {}
 /// byte view.
 ///
 /// [1]: https://docs.rs/zerocopy/0.8.9/zerocopy/trait.CloneableByteSlice.html#safety
-/// [2]: https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html
+/// [2]: https://docs.rs/bytes/1.8.0/bytes/struct.Bytes.html
 unsafe impl zerocopy::CloneableByteSlice for ByteSlice<Bytes> {}
 
 /// # Safety
@@ -393,11 +393,13 @@ unsafe impl zerocopy::ByteSlice for ByteSlice<BytesMut> {}
 ///   that `mid <= self.len()`.
 /// - `Bytes::split_to` returns bytes `[0, mid)` and leaves bytes `[mid, len)`
 ///   in `self`, so the returned wrappers exactly partition the original view.
+/// - bytes 1.8.0 guarantees the split addresses even when either half is empty;
+///   earlier versions can return a different empty pointer and violate this trait.
 ///
 /// The `Bytes` API documents that it "contains elements `[at, len)`" in self
 /// and returns `[0, at)` [1].
 ///
-/// [1]: https://docs.rs/bytes/1.0.0/bytes/struct.Bytes.html#method.split_to
+/// [1]: https://docs.rs/bytes/1.8.0/bytes/struct.Bytes.html#method.split_to
 unsafe impl zerocopy::SplitByteSlice for ByteSlice<Bytes> {
     /// # Safety
     /// `mid` must satisfy the trait contract: "mid must not be greater than
@@ -422,7 +424,7 @@ unsafe impl zerocopy::SplitByteSlice for ByteSlice<Bytes> {
 /// The `BytesMut` API documents that it "contains elements `[at, len)`" in
 /// self and returns `[0, at)` [1].
 ///
-/// [1]: https://docs.rs/bytes/1.0.0/bytes/struct.BytesMut.html#method.split_to
+/// [1]: https://docs.rs/bytes/1.8.0/bytes/struct.BytesMut.html#method.split_to
 unsafe impl zerocopy::SplitByteSlice for ByteSlice<BytesMut> {
     /// # Safety
     /// `mid` must satisfy the trait contract: "mid must not be greater than
@@ -434,5 +436,38 @@ unsafe impl zerocopy::SplitByteSlice for ByteSlice<BytesMut> {
         // described below.
         let lhs = self.0.split_to(mid);
         (Self(lhs), self)
+    }
+}
+
+#[cfg(test)]
+mod split_contract_tests {
+    use super::*;
+    use zerocopy::SplitByteSlice;
+
+    fn check_split<B: SplitByteSlice>(input: B, mid: usize) {
+        let start = input.as_ptr();
+        let len = input.len();
+        let (prefix, suffix) = input
+            .split_at(mid)
+            .unwrap_or_else(|_| panic!("valid split"));
+        assert_eq!(prefix.as_ptr(), start, "prefix address at {mid}/{len}");
+        assert_eq!(
+            suffix.as_ptr(),
+            start.wrapping_add(mid),
+            "suffix address at {mid}/{len}"
+        );
+        assert_eq!(prefix.len(), mid);
+        assert_eq!(suffix.len(), len - mid);
+    }
+
+    #[test]
+    fn split_preserves_addresses_including_empty_endpoints() {
+        for len in 0..=4 {
+            for mid in 0..=len {
+                let input = &b"abcd"[..len];
+                check_split(ByteSlice(Bytes::copy_from_slice(input)), mid);
+                check_split(ByteSlice(BytesMut::from(input)), mid);
+            }
+        }
     }
 }
